@@ -65,12 +65,166 @@ let rec regalloc ~ppf_dump round fd =
     Reg.reinit(); Liveness.fundecl newfd; regalloc ~ppf_dump (round + 1) newfd
   end else newfd
 
+(* Function to insert poll points in cmm *)
+(* Begin: Polling efficiently on stock hardware - Marc Feeley *)
+
+(* Terminology: four type of branches
+   1. Local (inside a procedure, possibily conditional) branches
+   2. Reductions = tail calls to procedures
+   3. Subproblems = non-tail calls to procedures
+   4. Returns (from a procedure call) *)
+
+(* max number of "instructions" generated without an intervening poll *)
+let l_max = 90
+
+(* grace at entry *)
+let e = l_max / 6
+
+(* largest admissible delta at a reduction call *)
+let r = e
+
+(* A poll is just a 0-byte allocation to trigger all the behaviour an allocation entails
+ * Especially important for multicore, numerical applications. *)
+let add_poll e =
+  let dbg, _args = Debuginfo.none, [Cconst_int (1, Debuginfo.none)] in
+  (* Stolen from cmmgen.ml for 0-sized float-arrays *)
+  let block_header tag sz = Nativeint.(add (shift_left (of_int sz) 10) (of_int tag)) in
+  Csequence (Cop(Calloc, Cblockheader(block_header 0 0, dbg) :: [], dbg), e)
+
+let insert_poll = 
+
+  (* Is/should this reset on every call? *)
+  let delta = ref (l_max - e) in
+
+  (* Right to left evaluation? Unless the list is already reversed? *)
+  let rec insert_polls exps =
+    let rec loop acc = function
+      | [] -> acc
+      | (exp :: exps) -> let exp = non_branch exp in loop (exp :: acc) exps in
+    loop [] (List.rev exps)
+
+  (* Non-branching instructions *)
+  and non_branch exp =
+    let exp = insert_poll exp in
+    if !delta >= l_max - 1 then
+      (delta := 1; add_poll exp)
+    else 
+      (delta := !delta + 1; exp)
+
+  and insert_poll =
+
+    function
+
+    | Cconst_int _     | Cconst_natint _     | Cconst_float _ | Cconst_symbol _
+    | Cconst_pointer _ | Cconst_natpointer _ | Cblockheader _ | Cvar _  as exp ->
+        if !delta >= l_max - 1 then
+          (delta := 1; add_poll exp)
+        else
+          (delta := !delta + 1; exp)
+
+    | Clet (id, exp1, exp2) ->
+        (* Don't poll when an address is being computed, otherwise bad GC root (emit.mlp) *)
+        begin match exp1 with
+        | Cop(Cadda, _, _) -> (delta := !delta + 1; Clet (id, exp1, insert_poll exp2))
+        | _ -> let exp1 = non_branch exp1 in Clet(id, exp1, insert_poll exp2)
+        end
+
+    | Cassign (id, exp) -> Cassign (id, insert_poll exp)
+    | Ctuple exps -> Ctuple (insert_polls exps)
+    | Csequence (exp1, exp2) -> let exp1 = non_branch exp1 in Csequence (exp1, insert_poll exp2)
+
+    (* Branching *)
+    | Cifthenelse (exp1, _exp1, exp2, _exp2, exp3, _exp3) ->
+        let exp1 = insert_poll exp1 in
+        let delta1 = !delta in
+        let exp2 = insert_poll exp2 in
+        let delta2 = !delta in
+        delta := delta1;
+        let exp3 = insert_poll exp3 in
+        delta := max delta2 !delta;
+        Cifthenelse(exp1,_exp1,exp2,_exp2,exp3,_exp3)
+
+    | Cswitch (exp, int_arr, exp_arr, debug) ->
+        let exp = insert_poll exp in
+        let delta' = !delta in
+        let max_delta = ref delta' in
+        for i = 0 to Array.length exp_arr - 1 do
+          Array.set exp_arr i ((insert_poll (fst exp_arr.(i))),debug);
+          max_delta := max !max_delta !delta;
+          delta := delta'
+        done;
+        delta := !max_delta;
+        Cswitch (exp, int_arr, exp_arr, debug)
+
+    | Ctrywith (exp1, id, exp2, dbg) ->
+        let exp1 = insert_poll exp1 in
+        let delta1 = !delta in
+        (* Can't make any assumptions so reset *)
+        delta := l_max - e;
+        let exp2 = insert_poll exp2 in
+        delta := max delta1 !delta;
+        Ctrywith (exp1, id, exp2, dbg)
+
+    (* Ccatch could be arbitrary control flow so no assumptions/resetting *)
+    (* Continuations fall through to subsequent so delta is max of them all..? *)
+    | Ccatch (rec_flag, int_id_exps, exp) ->
+        (* TODO : implement Ccatch properly *)
+        Ccatch (rec_flag, int_id_exps, exp)
+
+    (* Procedure return (assuming Cexit is that, couldn't understand selectgen.ml) *)
+    (* Also assuming there are always interrupts between block entry and this point *)
+    | Cexit (int, exps) ->
+        let exps = insert_polls exps in
+        if !delta >= e + r then
+          add_poll (Cexit (int, exps))
+        else
+          Cexit (int,exps)
+
+    | Cop (operation, exps, debug) -> cop_poll operation exps debug
+	| Cphantom_let (a,b,c) -> Cphantom_let (a,b,c)
+
+  and cop_poll op exps debug = 
+
+    (* Function calls *)
+    match op with
+    | Capply _ ->
+        let exps = insert_polls exps in
+        if !delta >= l_max - e then
+          (delta := e + r;
+           add_poll (Cop (op, exps, debug)))
+        else 
+          (delta := e + (max !delta r);
+           Cop(op, exps, debug))
+
+    (* Don't poll when an address is being computed, otherwise bad GC root (emit.mlp) *)
+    | Cload _ | Cstore _ ->
+        begin match exps with
+        | [Cop(Cadda, _, _)] ->
+            (delta := !delta + 1; Cop (op, exps, debug))
+        | _ ->
+            let exps = insert_polls exps in
+            (delta := !delta + 1; Cop (op, exps, debug))
+        end
+
+    (* A poll can't do anything about a Cextcall messing up *)
+    | Cextcall _ | Calloc | Caddi | Csubi | Cmuli | Cmulhi | Cdivi | Cmodi
+    | Cand | Cor | Cxor | Clsl | Clsr | Casr | Ccmpi _
+    | Caddv (* pointer addition that produces a [Val] (well-formed Caml value) *)
+    | Cadda (* pointer addition that produces a [Addr] (derived heap pointer) *)
+    | Ccmpa _ | Cnegf | Cabsf | Caddf | Csubf | Cmulf | Cdivf | Cfloatofint | Cintoffloat
+    | Ccmpf _ | Craise _ | Ccheckbound ->
+        let exps = insert_polls exps in
+        (delta := !delta + 1; Cop (op, exps, debug))
+  in fun x -> (delta := l_max - e; insert_poll x)
+
 let (++) x f = f x
 
 let compile_fundecl ~ppf_dump fd_cmm =
   Proc.init ();
   Reg.reset();
   fd_cmm
+  ++ Profile.record ~accumulate:true "insert_poll"
+  (fun ({fun_body} as fundecl) -> {fundecl with fun_body = insert_poll fun_body})
   ++ Profile.record ~accumulate:true "selection" Selection.fundecl
   ++ pass_dump_if ppf_dump dump_selection "After instruction selection"
   ++ Profile.record ~accumulate:true "comballoc" Comballoc.fundecl
