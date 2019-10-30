@@ -195,7 +195,8 @@ let reg64 = function
   | _ -> assert false
 
 
-let res i n = reg i.res.(n)
+let res i n =
+    reg i.res.(n)
 
 let arg i n = reg i.arg.(n)
 
@@ -786,6 +787,9 @@ let emit_instr fallthrough i =
   | Lop(Ispecific(Izextend32)) ->
       I.mov (arg32 i 0) (res32 i 0)
   | Lop (Iname_for_debugger _) -> ()
+  | Lop (Ipoll) -> 
+        I.cmp (domain_field Domainstate.Domain_young_limit) r15;
+        emit_call "caml_call_gc"
   | Lreloadretaddr ->
       ()
   | Lreturn ->
