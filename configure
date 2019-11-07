@@ -12494,7 +12494,7 @@ case $host in #(
   *) :
     case $ocaml_cv_cc_vendor in #(
   clang-*) :
-    common_cflags="-O2 -fno-strict-aliasing -fwrapv";
+    common_cflags="-O2 -fno-strict-aliasing -fwrapv -mavx2 -mavx";
       internal_cflags="$gcc_warnings" ;; #(
   gcc-012-*) :
     # Some versions known to miscompile OCaml, e,g, 2.7.2.1, some 2.96.
@@ -12514,10 +12514,10 @@ $as_echo "$as_me: WARNING: Consider using GCC version 4.2 or above." >&2;};
       internal_cflags="$gcc_warnings" ;; #(
   gcc-4-*) :
     common_cflags="-std=gnu99 -O2 -fno-strict-aliasing -fwrapv \
--fno-builtin-memcmp";
+-fno-builtin-memcmp -mavx2 -mavx";
       internal_cflags="$gcc_warnings" ;; #(
   gcc-*) :
-    common_cflags="-O2 -fno-strict-aliasing -fwrapv";
+    common_cflags="-O2 -fno-strict-aliasing -fwrapv -mavx2 -mavx";
       internal_cflags="$gcc_warnings" ;; #(
   msvc-*) :
     common_cflags="-nologo -O2 -Gy- -MD"

@@ -17,6 +17,7 @@
 
 /* Operations on arrays */
 #include <string.h>
+#include <immintrin.h>
 #include "caml/alloc.h"
 #include "caml/fail.h"
 #include "caml/memory.h"
@@ -25,6 +26,7 @@
 #include "caml/signals.h"
 /* Why is caml/spacetime.h included conditionnally sometimes and not here ? */
 #include "caml/spacetime.h"
+#include "stdio.h"
 
 static const mlsize_t mlsize_t_max = -1;
 
@@ -634,3 +636,21 @@ CAMLprim value caml_array_fill(value array,
   }
   return Val_unit;
 }
+
+// in-place ops
+
+/* 'a array -> unit */
+CAMLprim value caml_array_avx_zero_inplace(value a) {
+
+    __m256i b __attribute__ ((aligned (32)));
+    b = (__m256i){0x1,0x1,0x1,0x1};
+    int tiles = Wosize_val(a)/4;
+
+    for(int i = 0; i < tiles; i++) {
+        __m256i* r = (__m256i*) &Field(a,0 + i*4);
+        *r = _mm256_and_si256(*r, b);
+    }
+    return Val_unit;
+}
+
+// new ops

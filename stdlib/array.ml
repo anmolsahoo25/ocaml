@@ -35,6 +35,8 @@ external unsafe_fill :
 external create_float: int -> float array = "caml_make_float_vect"
 let make_float = create_float
 
+external avx_bcast_inplace : 'a array -> unit = "caml_array_avx_zero_inplace"
+
 module Floatarray = struct
   external create : int -> floatarray = "caml_floatarray_create"
   external length : floatarray -> int = "%floatarray_length"

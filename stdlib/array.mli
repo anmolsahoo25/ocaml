@@ -299,3 +299,5 @@ module Floatarray : sig
   external unsafe_set : floatarray -> int -> float -> unit
       = "%floatarray_unsafe_set"
 end
+
+external avx_bcast_inplace : 'a array -> unit = "caml_array_avx_zero_inplace"
