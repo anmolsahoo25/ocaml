@@ -300,4 +300,4 @@ module Floatarray : sig
       = "%floatarray_unsafe_set"
 end
 
-external avx_bcast_inplace : 'a array -> unit = "caml_array_avx_zero_inplace"
+external avx_bcast_inplace : 'a array -> 'a -> unit = "caml_array_avx_bcast_inplace"

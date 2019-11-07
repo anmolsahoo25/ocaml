@@ -639,17 +639,26 @@ CAMLprim value caml_array_fill(value array,
 
 // in-place ops
 
-/* 'a array -> unit */
-CAMLprim value caml_array_avx_zero_inplace(value a) {
+/* 'a array -> 'a -> unit */
+CAMLprim value caml_array_avx_bcast_inplace(value a, value b) {
 
-    __m256i b __attribute__ ((aligned (32)));
-    b = (__m256i){0x1,0x1,0x1,0x1};
     int tiles = Wosize_val(a)/4;
+
+    __m256i bval __attribute__ ((aligned (32)));
+    bval = (__m256i){0x1,0x1,0x1,0x1};
 
     for(int i = 0; i < tiles; i++) {
         __m256i* r = (__m256i*) &Field(a,0 + i*4);
-        *r = _mm256_and_si256(*r, b);
+        *r = _mm256_and_si256(*r, bval);
     }
+
+    bval = (__m256i){b,b,b,b};
+
+    for(int i = 0; i < tiles; i++) {
+        __m256i* r = (__m256i*) &Field(a,0 + i*4);
+        *r = _mm256_or_si256(*r, bval);
+    }
+
     return Val_unit;
 }
 
