@@ -36,6 +36,7 @@ external create_float: int -> float array = "caml_make_float_vect"
 let make_float = create_float
 
 external avx_bcast_inplace : 'a array -> 'a -> unit = "caml_array_avx_bcast_inplace"
+external avx_mem : 'a array -> 'a -> bool = "caml_array_avx_mem"
 
 module Floatarray = struct
   external create : int -> floatarray = "caml_floatarray_create"

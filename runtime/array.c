@@ -662,4 +662,24 @@ CAMLprim value caml_array_avx_bcast_inplace(value a, value b) {
     return Val_unit;
 }
 
+/* 'a array -> 'a -> bool */
+CAMLprim value caml_array_avx_mem(value a, value b) {
+
+    int tiles = Wosize_val(a)/4;
+
+    __m256i bval __attribute__ ((aligned(32)));
+    __m256i tval __attribute__ ((aligned(32)));
+
+    bval = (__m256i){b,b,b,b};
+    for(int i = 0; i < tiles; i++) {
+        __m256i* r = (__m256i*) &Field(a,0 + i*4);
+        tval = _mm256_cmpeq_epi64(*r, bval);
+
+
+        if (_mm256_movemask_epi8(tval) != 0) 
+            return Val_true;
+    }
+    return Val_false;
+}
+
 // new ops

@@ -301,3 +301,4 @@ module Floatarray : sig
 end
 
 external avx_bcast_inplace : 'a array -> 'a -> unit = "caml_array_avx_bcast_inplace"
+external avx_mem : 'a array -> 'a -> bool = "caml_array_avx_mem"
