@@ -21,6 +21,7 @@ let e = lmax/k
 (* let r = lmax/k *)
 
 let is_addr_live i = not (Reg.Set.is_empty (Reg.Set.filter (fun f -> f.typ = Cmm.Addr) i))
+let is_rax_used i = not (Reg.Set.is_empty (Reg.Set.filter (fun f -> f.loc = Reg.Reg 0) i))
 
 let insert_poll_instr instr = 
     let poll_instr = 
@@ -38,9 +39,8 @@ let rec insert_poll_aux delta instr =
         | Iend -> instr.next
         | _ ->
           if delta >= (lmax-1) then 
-            (print_endline "inserted";
-            if (is_addr_live instr.live) then
-                (print_endline "moving, addr";insert_poll_aux delta instr.next)
+            (if ((is_addr_live instr.live) || (is_rax_used instr.live)) then
+                insert_poll_aux delta instr.next
             else
                 insert_poll_instr (insert_poll_aux 0 instr.next))
           else
