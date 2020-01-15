@@ -16,7 +16,7 @@ open Mach
 open Clflags
 
 (* constants *)
-let lmax = 500
+let lmax = 175
 let k = 6
 let e = lmax/k
 (* let r = lmax/k *)
