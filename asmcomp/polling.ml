@@ -16,28 +16,23 @@ open Mach
 open Clflags
 
 (* constants *)
-let lmax = 50
+let lmax = 25
 let k = 10
 let e = lmax/k
 (* let r = lmax/k *)
 
 let is_addr_live i = not (Reg.Set.is_empty (Reg.Set.filter (fun f -> f.typ = Cmm.Addr) i))
 
-let insert_poll_instr instr live = 
-    let live_regs = Reg.Set.elements (Reg.Set.filter (fun f ->
-        match f.loc,f.typ with
-            | Reg _ , Int -> true
-            | Reg _ , Val -> true
-            | _ -> false) live) in
-    let poll_instr = Iop (Ipoll live_regs) in
+let insert_poll_instr instr next = 
+    let poll_instr = Iop (Ipoll) in
     { desc = poll_instr;
       next = instr;
       arg = [||];
       res = [| |] ;
       dbg = Debuginfo.none;
-      live = Reg.Set.empty;
-      available_before = Reg_availability_set.Ok Reg_with_debug_info.Set.empty;
-      available_across = None;
+      live = next.live;
+      available_before = next.available_before;
+      available_across = next.available_across;
     }
 
 let rec insert_poll_aux delta instr =
@@ -70,10 +65,10 @@ let rec insert_poll_aux delta instr =
         | Iop Iname_for_debugger _ , _ ->
             let next = 
             if (delta > lmax) then begin
-                if (is_addr_live instr.live) then begin
+                if (is_addr_live instr.next.live) then begin
                     insert_poll_aux delta instr.next end
                 else begin
-                    insert_poll_instr (insert_poll_aux 0 instr.next) instr.live
+                    insert_poll_instr (insert_poll_aux 0 instr.next) instr.next
                 end
             end else begin
                 insert_poll_aux (delta + 1) instr.next
@@ -87,10 +82,10 @@ let rec insert_poll_aux delta instr =
         | _ , Iop (Itailcall_imm _) ->
             let next = 
             if (delta > (lmax -e)) then begin
-                if (is_addr_live instr.live) then begin
+                if (is_addr_live instr.next.live) then begin
                     insert_poll_aux delta instr.next
                 end else begin
-                    insert_poll_instr (insert_poll_aux (lmax - e) instr.next) instr.live
+                    insert_poll_instr (insert_poll_aux (lmax - e) instr.next) instr.next
                 end
             end else begin
                 insert_poll_aux (lmax - e) instr.next
@@ -104,7 +99,11 @@ let rec insert_poll_aux delta instr =
                 insert_poll_aux delta instr.next
             end else begin
                 if (delta > lmax - e) then begin
-                    insert_poll_instr (insert_poll_aux 0 instr.next) instr.live
+                    if (is_addr_live instr.next.live) then begin
+                        insert_poll_aux delta instr.next
+                    end else begin
+                        insert_poll_instr (insert_poll_aux 0 instr.next) instr.next
+                    end
                 end else begin
                     insert_poll_aux (delta + 1) instr.next
                 end

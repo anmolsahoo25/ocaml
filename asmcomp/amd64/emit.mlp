@@ -787,14 +787,13 @@ let emit_instr fallthrough i =
   | Lop(Ispecific(Izextend32)) ->
       I.mov (arg32 i 0) (res32 i 0)
   | Lop (Iname_for_debugger _) -> ()
-  | Lop (Ipoll live) -> 
+  | Lop (Ipoll) -> 
       I.cmp (domain_field Domainstate.Domain_young_limit) r15;
       let gc_call_label = new_label () in
       let label_after_gc = new_label () in
       let lbl_frame =
         record_frame_label ?label:None i.live (Dbg_other (Debuginfo.none))
       in
-      List.iter (fun f -> I.push (reg f)) live;
       I.jb (label gc_call_label);
       call_gc_sites :=
         { gc_lbl = gc_call_label;
@@ -802,7 +801,6 @@ let emit_instr fallthrough i =
           gc_frame = lbl_frame;
           gc_spacetime = None } :: !call_gc_sites;
       def_label label_after_gc;
-      List.iter (fun f -> I.pop (reg f)) (List.rev live);
       ()
   | Lreloadretaddr ->
       ()
