@@ -91,12 +91,13 @@ void caml_garbage_collection(void)
       /* Since 2 words is the smallest allocation, sizes are
          encoded as (wosize - 2).
          See Emitaux.emit_frames and caml/stack.h */
+      //printf("alloc_len is %d\n", alloc_len[i]);
       allocsz += alloc_len[i] + 2;
     }
     /* We have computed whsize (including header), but need wosize (without) */
     allocsz -= 1;
   }
-
+  //printf("alloc called with %ld\n", allocsz);
   caml_alloc_small_dispatch(0 /* FIXME */, allocsz,
                             /* CAML_DO_TRACK | */ CAML_FROM_CAML);
 }
