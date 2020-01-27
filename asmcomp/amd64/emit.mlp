@@ -789,10 +789,19 @@ let emit_instr fallthrough i =
   | Lop (Iname_for_debugger _) -> ()
   | Lop (Ipoll) -> 
       I.cmp (domain_field Domainstate.Domain_young_limit) r15;
-      let poll_return_label = new_label () in
-      I.jne (label poll_return_label);
-      emit_call "caml_poll";
-      def_label poll_return_label
+      let gc_call_label = new_label () in
+      let label_after_gc = new_label () in
+      let lbl_frame =
+        record_frame_label ?label:None i.live (Dbg_other (Debuginfo.none))
+      in
+      I.jb (label gc_call_label);
+      call_gc_sites :=
+        { gc_lbl = gc_call_label;
+          gc_return_lbl = label_after_gc;
+          gc_frame = lbl_frame;
+          gc_spacetime = None } :: !call_gc_sites;
+      def_label label_after_gc;
+      ()
   | Lreloadretaddr ->
       ()
   | Lreturn ->
