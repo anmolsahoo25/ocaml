@@ -794,7 +794,7 @@ let emit_instr fallthrough i =
       let lbl_frame =
         record_frame_label ?label:None i.live (Dbg_alloc Debuginfo.([{alloc_words = -1 ; alloc_dbg = []}]))
       in
-      I.je (label gc_call_label);
+      I.jb (label gc_call_label);
       call_gc_sites :=
         { gc_lbl = gc_call_label;
           gc_return_lbl = label_after_gc;
