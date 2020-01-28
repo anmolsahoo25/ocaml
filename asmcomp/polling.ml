@@ -36,9 +36,9 @@ let insert_poll_instr instr next =
     }
 
 let rec insert_poll_aux delta instr =
-    let (desc, next) = match instr.desc with
+    let (desc, live, next) = match instr.desc with
         (* terminating condition *)
-        | Iend -> (instr.desc, instr.next)
+        | Iend -> (instr.desc, instr.live, instr.next)
 
         (* no control-flow change operations *)
         | Iop Imove
@@ -74,82 +74,82 @@ let rec insert_poll_aux delta instr =
                 insert_poll_aux (delta + 1) instr.next
             end
             in
-            (instr.desc , next)
+            (instr.desc , instr.live, next)
         (* control-flow changing operations *)
         | Iop (Icall_ind _)
         | Iop (Icall_imm _)
         | Iop (Itailcall_ind _)
         | Iop (Itailcall_imm _)
         | Iop (Iextcall _) ->
-            let (desc, next) = 
+            let (desc, live, next) = 
                 if (delta > (lmax - e)) then begin
                     if (is_addr_live instr.live) then begin
-                        (instr.desc, insert_poll_aux (lmax-e) instr.next)
+                        (instr.desc, instr.live, insert_poll_aux (lmax-e) instr.next)
                     end else begin
                         let updated_instr = {instr with next = insert_poll_aux (lmax-e) instr.next} in
-                        (Iop (Ipoll), updated_instr)
+                        (Iop (Ipoll), instr.live, updated_instr)
                     end
                 end else begin
-                    (instr.desc, insert_poll_aux (lmax-e) instr.next)
+                    (instr.desc, instr.live, insert_poll_aux (lmax-e) instr.next)
                 end
             in
-            (desc, next)
+            (desc, live, next)
         (* complex instructions *)
         | Ireturn ->
-            let (desc, next) = 
+            let (desc, live, next) = 
                 if (delta > (lmax - e)) then begin
                     if (is_addr_live instr.live) then begin
-                        (instr.desc, insert_poll_aux (lmax-e) instr.next)
+                        (instr.desc, instr.live, insert_poll_aux (lmax-e) instr.next)
                     end else begin
                         let updated_instr = {instr with next = insert_poll_aux (lmax-e) instr.next} in
-                        (Iop (Ipoll), updated_instr)
+                        (Iop (Ipoll), instr.live, updated_instr)
                     end
                 end else begin
-                    (instr.desc, instr.next)
+                    (instr.desc, instr.live, instr.next)
                 end
             in
-            (desc, next)
+            (desc, live, next)
         | Iifthenelse (test, i1, i2) ->
-            (Iifthenelse (test, insert_poll_aux delta i1, insert_poll_aux delta i2), insert_poll_aux (lmax-e) instr.next)
+            (Iifthenelse (test, insert_poll_aux delta i1, insert_poll_aux delta i2), instr.live, insert_poll_aux (lmax-e) instr.next)
         | Iswitch (iarr, instrs) ->
-            (Iswitch (iarr, Array.map (fun i -> insert_poll_aux delta i) instrs), insert_poll_aux (lmax-e) instr.next)
+            (Iswitch (iarr, Array.map (fun i -> insert_poll_aux delta i) instrs), instr.live, insert_poll_aux (lmax-e) instr.next)
         | Icatch (_rec_flag, handlers, body) ->
             let new_body = insert_poll_aux delta body in
             let new_handlers = List.map (fun (n,i) -> (n, insert_poll_aux (lmax-e) i)) handlers in
-            (Icatch (_rec_flag, new_handlers, new_body), instr.next)
+            (Icatch (_rec_flag, new_handlers, new_body), instr.live, instr.next)
         | Iexit _ ->
-            let (desc, next) = 
+            let (desc, live, next) = 
                 if (delta > (lmax - e)) then begin
                     if (is_addr_live instr.live) then begin
-                        (instr.desc, insert_poll_aux (lmax-e) instr.next)
+                        (instr.desc, instr.live, insert_poll_aux (lmax-e) instr.next)
                     end else begin
                         let updated_instr = {instr with next = insert_poll_aux (lmax-e) instr.next} in
-                        (Iop (Ipoll), updated_instr)
+                        (Iop (Ipoll), instr.live, updated_instr)
                     end
                 end else begin
-                    (instr.desc, instr.next)
+                    (instr.desc, instr.live, instr.next)
                 end
             in
-            (desc, next)
+            (desc, live, next)
         | Itrywith (body, handler) ->
-            (Itrywith (insert_poll_aux delta body, insert_poll_aux (lmax-e) handler) , insert_poll_aux (lmax-e) instr.next)
+            (Itrywith (insert_poll_aux delta body, insert_poll_aux (lmax-e) handler) , instr.live, insert_poll_aux (lmax-e) instr.next)
         | Iraise _ ->
-            let (desc, next) = 
+            let (desc, live, next) = 
                 if (delta > (lmax - e)) then begin
                     if (is_addr_live instr.live) then begin
-                        (instr.desc, insert_poll_aux (lmax-e) instr.next)
+                        (instr.desc, instr.live, insert_poll_aux (lmax-e) instr.next)
                     end else begin
                         let updated_instr = {instr with next = insert_poll_aux (lmax-e) instr.next} in
-                        (Iop (Ipoll), updated_instr)
+                        (Iop (Ipoll), instr.live, updated_instr)
                     end
                 end else begin
-                    (instr.desc, instr.next)
+                    (instr.desc, instr.live, instr.next)
                 end
             in
-            (desc, next)
+            (desc, live, next)
         | Iop (Ipoll) -> assert false
     in
-    { instr with desc ; next }
+    { instr with desc ; live ; next }
 
 let insert_poll fun_body =
     insert_poll_aux (lmax-e) fun_body

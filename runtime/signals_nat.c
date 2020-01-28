@@ -92,12 +92,14 @@ void caml_garbage_collection(void)
          encoded as (wosize - 2).
          See Emitaux.emit_frames and caml/stack.h */
       //printf("alloc_len is %d\n", alloc_len[i]);
-      allocsz += alloc_len[i] + 2;
+      //printf("alloc len is %x\n", (int8_t)alloc_len[i]+2);
+      allocsz += (int8_t)alloc_len[i] + 2;
     }
     /* We have computed whsize (including header), but need wosize (without) */
     allocsz -= 1;
   }
   //printf("alloc called with %ld\n", allocsz);
+
   caml_alloc_small_dispatch(0 /* FIXME */, allocsz,
                             /* CAML_DO_TRACK | */ CAML_FROM_CAML);
 }
