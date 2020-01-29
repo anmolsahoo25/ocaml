@@ -16,7 +16,7 @@ open Mach
 open Clflags
 
 (* constants *)
-let lmax = 25
+let lmax = 15
 let k = 10
 let e = lmax/k
 (* let r = lmax/k *)
@@ -40,6 +40,10 @@ let rec insert_poll_aux delta instr =
         (* terminating condition *)
         | Iend -> (instr.desc, instr.live, instr.next)
 
+        (* reset counter *)
+        | Iop Ialloc _ ->
+            (instr.desc, instr.live, insert_poll_aux 0 instr.next)
+
         (* no control-flow change operations *)
         | Iop Imove
         | Iop Ispill
@@ -50,7 +54,6 @@ let rec insert_poll_aux delta instr =
         | Iop Istackoffset _
         | Iop Iload _
         | Iop Istore _
-        | Iop Ialloc _
         | Iop Iintop _
         | Iop Iintop_imm _
         | Iop Inegf
@@ -96,13 +99,14 @@ let rec insert_poll_aux delta instr =
             (desc, live, next)
         (* complex instructions *)
         | Ireturn ->
+            let rax = { Reg.dummy with loc = Reg.Reg 0 ; typ = Cmm.Val } in
             let (desc, live, next) = 
                 if (delta > (lmax - e)) then begin
                     if (is_addr_live instr.live) then begin
                         (instr.desc, instr.live, insert_poll_aux (lmax-e) instr.next)
                     end else begin
                         let updated_instr = {instr with next = insert_poll_aux (lmax-e) instr.next} in
-                        (Iop (Ipoll), instr.live, updated_instr)
+                        (Iop (Ipoll), Reg.Set.add rax instr.live, updated_instr)
                     end
                 end else begin
                     (instr.desc, instr.live, instr.next)
