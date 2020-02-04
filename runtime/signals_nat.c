@@ -98,6 +98,42 @@ void caml_garbage_collection(void)
                             nallocs, alloc_len);
 }
 
+void caml_poll(void)
+{
+  int flags = CAML_FROM_CAML | CAML_DO_TRACK;
+
+  while(1) {
+    /* We might be here because of an async callback / urgent GC
+       request. Take the opportunity to do what has been requested. */
+    if (flags & CAML_FROM_CAML)
+      /* In the case of allocations performed from OCaml, execute
+         asynchronous callbacks. */
+      caml_raise_if_exception(caml_do_pending_actions_exn ());
+    else {
+      caml_check_urgent_gc (Val_unit);
+      /* In the case of long-running C code that regularly polls with
+         caml_process_pending_actions, force a query of all callbacks
+         at every minor collection or major slice. */
+      caml_something_to_do = 1;
+    }
+
+    /* Now, there might be enough room in the minor heap to do our
+       allocation. */
+    if (Caml_state->young_ptr >= Caml_state->young_trigger)
+      break;
+
+    /* If not, then empty the minor heap, and check again for async
+       callbacks. */
+    CAML_INSTR_INT ("force_minor/alloc_small@", 1);
+    caml_gc_dispatch ();
+  }
+
+  /* Check if the allocated block has been sampled by memprof. */
+  if(Caml_state->young_ptr < caml_memprof_young_trigger){
+    caml_memprof_renew_minor_sample();
+  }
+}
+
 DECLARE_SIGNAL_HANDLER(handle_signal)
 {
   int saved_errno;

@@ -163,6 +163,7 @@ let operation op arg ppf res =
         | None -> ""
         | Some index -> sprintf "[P%d]" index)
       reg arg.(0)
+  | Ipoll -> fprintf ppf "poll"
   | Ispecific op ->
       Arch.print_specific_operation reg op ppf arg
 

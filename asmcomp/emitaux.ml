@@ -198,9 +198,9 @@ let emit_frames a =
       a.efa_8 (List.length dbg);
       List.iter (fun Debuginfo.{alloc_words;_} ->
         (* Possible allocations range between 2 and 257 *)
-        assert (2 <= alloc_words &&
+        assert ((alloc_words = 0) || (2 <= alloc_words &&
                 alloc_words - 1 <= Config.max_young_wosize &&
-                Config.max_young_wosize <= 256);
+                Config.max_young_wosize <= 256));
         a.efa_8 (alloc_words - 2)) dbg;
       if flags = 3 then begin
         a.efa_align 4;

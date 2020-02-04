@@ -114,6 +114,7 @@ val strict_sequence : bool ref
 val strict_formats : bool ref
 val applicative_functors : bool ref
 val make_runtime : bool ref
+val no_poll : bool ref
 val c_compiler : string option ref
 val no_auto_link : bool ref
 val dllpaths : string list ref
