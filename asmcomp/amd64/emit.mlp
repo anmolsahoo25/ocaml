@@ -276,6 +276,81 @@ let record_frame ?label live raise_ dbg =
   let lbl = record_frame_label ?label live raise_ dbg in
   def_label lbl
 
+let emit_tsan s addr mode i n =
+  if !Clflags.add_tsan then begin
+    I.push (Reg64 RAX);
+    I.push (Reg64 RBX);
+    I.push (Reg64 RBP);
+    I.push (Reg64 RSI);
+    I.push (Reg64 RDI);
+    I.push (Reg64 R12);
+    I.push (Reg64 R13);
+    I.push (Reg64 R14);
+    I.push (Reg64 R15);
+    I.lea (mode addr QWORD i n) (Reg64 RDI);
+    emit_call s;
+    record_frame i.live false i.dbg;
+    I.pop (Reg64 R15);
+    I.pop (Reg64 R14);
+    I.pop (Reg64 R13);
+    I.pop (Reg64 R12);
+    I.pop (Reg64 RDI);
+    I.pop (Reg64 RSI);
+    I.pop (Reg64 RBP);
+    I.pop (Reg64 RBX);
+    I.pop (Reg64 RAX);
+  end else ()
+
+let emit_tsan_func_entry i =
+  if !Clflags.add_tsan then begin
+    I.push (Reg64 RAX);
+    I.push (Reg64 RBX);
+    I.push (Reg64 RBP);
+    I.push (Reg64 RSI);
+    I.push (Reg64 RDI);
+    I.push (Reg64 R12);
+    I.push (Reg64 R13);
+    I.push (Reg64 R14);
+    I.push (Reg64 R15);
+    I.mov (arg i 0) (Reg64 RDI);
+    emit_call "__tsan_func_entry";
+    record_frame i.live false i.dbg;
+    I.pop (Reg64 R15);
+    I.pop (Reg64 R14);
+    I.pop (Reg64 R13);
+    I.pop (Reg64 R12);
+    I.pop (Reg64 RDI);
+    I.pop (Reg64 RSI);
+    I.pop (Reg64 RBP);
+    I.pop (Reg64 RBX);
+    I.pop (Reg64 RAX);
+  end else ()
+
+let emit_tsan_func_exit i =
+  if !Clflags.add_tsan then begin
+    I.push (Reg64 RAX);
+    I.push (Reg64 RBX);
+    I.push (Reg64 RBP);
+    I.push (Reg64 RSI);
+    I.push (Reg64 RDI);
+    I.push (Reg64 R12);
+    I.push (Reg64 R13);
+    I.push (Reg64 R14);
+    I.push (Reg64 R15);
+    emit_call "__tsan_func_exit";
+    record_frame i.live false i.dbg;
+    I.pop (Reg64 R15);
+    I.pop (Reg64 R14);
+    I.pop (Reg64 R13);
+    I.pop (Reg64 R12);
+    I.pop (Reg64 RDI);
+    I.pop (Reg64 RSI);
+    I.pop (Reg64 RBP);
+    I.pop (Reg64 RBX);
+    I.pop (Reg64 RAX);
+  end else ()
+
+
 (* Spacetime instrumentation *)
 
 let spacetime_before_uninstrumented_call ~node_ptr ~index =
@@ -589,6 +664,7 @@ let emit_instr fallthrough i =
       add_used_symbol s;
       load_symbol_addr s (res i 0)
   | Lop(Icall_ind { label_after; }) ->
+      emit_tsan_func_entry i;
       if Config.stats then begin
         I.inc (domain_field Domainstate.Domain_call_ind);
       end;
@@ -606,6 +682,7 @@ let emit_instr fallthrough i =
       if Config.stats then begin
         I.inc (domain_field Domainstate.Domain_tailcall_ind);
       end;
+      emit_tsan_func_entry i;
       I.jmp (arg i 0);
       (* TODO KC: Spacetime
       if Config.spacetime then begin
@@ -681,22 +758,31 @@ let emit_instr fallthrough i =
       let dest = res i 0 in
       begin match chunk with
       | Word_int | Word_val ->
+          emit_tsan "__tsan_read8" addr addressing i 0;
           I.mov (addressing addr QWORD i 0) dest
       | Byte_unsigned ->
+          emit_tsan "__tsan_read1" addr addressing i 0; 
           I.movzx (addressing addr BYTE i 0) dest
       | Byte_signed ->
+          emit_tsan "__tsan_read1" addr addressing i 0;
           I.movsx (addressing addr BYTE i 0) dest
       | Sixteen_unsigned ->
+          emit_tsan "__tsan_read2" addr addressing i 0;
           I.movzx (addressing addr WORD i 0) dest
       | Sixteen_signed ->
+          emit_tsan "__tsan_read2" addr addressing i 0;
           I.movsx (addressing addr WORD i 0) dest;
       | Thirtytwo_unsigned ->
+          emit_tsan "__tsan_read4" addr addressing i 0;
           I.mov (addressing addr DWORD i 0) (res32 i 0)
       | Thirtytwo_signed ->
+          emit_tsan "__tsan_read4" addr addressing i 0;
           I.movsxd (addressing addr DWORD i 0) dest
       | Single ->
+          emit_tsan "__tsan_read8" addr addressing i 0;
           I.cvtss2sd (addressing addr REAL4 i 0) dest
       | Double | Double_u ->
+          emit_tsan "__tsan_read8" addr addressing i 0;
           I.movsd (addressing addr REAL8 i 0) dest
       end
   | Lop(Istore(chunk, addr, is_assignment)) ->
@@ -705,17 +791,23 @@ let emit_instr fallthrough i =
       end;
       begin match chunk with
       | Word_int | Word_val ->
+          emit_tsan "__tsan_write8" addr addressing i 1;
           I.mov (arg i 0) (addressing addr QWORD i 1)
       | Byte_unsigned | Byte_signed ->
+          emit_tsan "__tsan_write1" addr addressing i 1;
           I.mov (arg8 i 0) (addressing addr BYTE i 1)
       | Sixteen_unsigned | Sixteen_signed ->
+          emit_tsan "__tsan_write2" addr addressing i 1;
           I.mov (arg16 i 0) (addressing addr WORD i 1)
       | Thirtytwo_signed | Thirtytwo_unsigned ->
+          emit_tsan "__tsan_write4" addr addressing i 1;
           I.mov (arg32 i 0) (addressing addr DWORD i 1)
       | Single ->
+          emit_tsan "__tsan_write8" addr addressing i 1;
           I.cvtsd2ss (arg i 0) xmm15;
           I.movss xmm15 (addressing addr REAL4 i 1)
       | Double | Double_u ->
+          emit_tsan "__tsan_write8" addr addressing i 1;
           I.movsd (arg i 0) (addressing addr REAL8 i 1)
       end
   | Lop(Ialloc { bytes = n; label_after_call_gc; spacetime_index; }) ->
@@ -878,6 +970,7 @@ let emit_instr fallthrough i =
       ()
   | Lreturn ->
       output_epilogue begin fun () ->
+        emit_tsan_func_exit i;
         I.ret ()
       end
   | Llabel lbl ->

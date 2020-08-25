@@ -202,6 +202,7 @@ module type Optcommon_options = sig
   val _drawclambda : unit -> unit
   val _dclambda : unit -> unit
   val _dcmm : unit -> unit
+  val _add_tsan : unit -> unit
   val _dsel : unit -> unit
   val _dcombine : unit -> unit
   val _dcse : unit -> unit

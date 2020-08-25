@@ -761,6 +761,9 @@ let mk_dcmm f =
   "-dcmm", Arg.Unit f, " (undocumented)"
 ;;
 
+let mk_add_tsan f =
+  "-add-tsan", Arg.Unit f, " (add tsan instrumentation)"
+
 let mk_dsel f =
   "-dsel", Arg.Unit f, " (undocumented)"
 ;;
@@ -1063,6 +1066,7 @@ module type Optcommon_options = sig
   val _drawclambda : unit -> unit
   val _dclambda : unit -> unit
   val _dcmm : unit -> unit
+  val _add_tsan : unit -> unit
   val _dsel : unit -> unit
   val _dcombine : unit -> unit
   val _dcse : unit -> unit
@@ -1419,6 +1423,7 @@ struct
     mk_dflambda_let F._dflambda_let;
     mk_dflambda_verbose F._dflambda_verbose;
     mk_dcmm F._dcmm;
+    mk_add_tsan F._add_tsan;
     mk_dsel F._dsel;
     mk_dcombine F._dcombine;
     mk_dcse F._dcse;
@@ -1525,6 +1530,7 @@ module Make_opttop_options (F : Opttop_options) = struct
     mk_drawflambda F._drawflambda;
     mk_dflambda F._dflambda;
     mk_dcmm F._dcmm;
+    mk_add_tsan F._add_tsan;
     mk_dsel F._dsel;
     mk_dcombine F._dcombine;
     mk_dcse F._dcse;
@@ -1701,6 +1707,7 @@ module Default = struct
     let _davail () = dump_avail := true
     let _dclambda = set dump_clambda
     let _dcmm = set dump_cmm
+    let _add_tsan = set add_tsan
     let _dcombine = set dump_combine
     let _dcse = set dump_cse
     let _dflambda = set dump_flambda
