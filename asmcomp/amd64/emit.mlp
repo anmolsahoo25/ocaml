@@ -326,6 +326,56 @@ let emit_tsan_func_entry i =
     I.pop (Reg64 RAX);
   end else ()
 
+let emit_tsan_func_entry_imm i f =
+  if !Clflags.add_tsan then begin
+    I.push (Reg64 RAX);
+    I.push (Reg64 RBX);
+    I.push (Reg64 RBP);
+    I.push (Reg64 RSI);
+    I.push (Reg64 RDI);
+    I.push (Reg64 R12);
+    I.push (Reg64 R13);
+    I.push (Reg64 R14);
+    I.push (Reg64 R15);
+    I.lea (mem64_rip OWORD (emit_symbol f)) (Reg64 RDI);
+    emit_call "__tsan_func_entry";
+    record_frame i.live false i.dbg;
+    I.pop (Reg64 R15);
+    I.pop (Reg64 R14);
+    I.pop (Reg64 R13);
+    I.pop (Reg64 R12);
+    I.pop (Reg64 RDI);
+    I.pop (Reg64 RSI);
+    I.pop (Reg64 RBP);
+    I.pop (Reg64 RBX);
+    I.pop (Reg64 RAX);
+  end else ()
+
+let emit_tsan_func_entry_ext i =
+  if !Clflags.add_tsan then begin
+    I.push (Reg64 RAX);
+    I.push (Reg64 RBX);
+    I.push (Reg64 RBP);
+    I.push (Reg64 RSI);
+    I.push (Reg64 RDI);
+    I.push (Reg64 R12);
+    I.push (Reg64 R13);
+    I.push (Reg64 R14);
+    I.push (Reg64 R15);
+    I.mov (Reg64 RAX) (Reg64 RDI);
+    emit_call "__tsan_func_entry";
+    record_frame i.live false i.dbg;
+    I.pop (Reg64 R15);
+    I.pop (Reg64 R14);
+    I.pop (Reg64 R13);
+    I.pop (Reg64 R12);
+    I.pop (Reg64 RDI);
+    I.pop (Reg64 RSI);
+    I.pop (Reg64 RBP);
+    I.pop (Reg64 RBX);
+    I.pop (Reg64 RAX);
+  end else ()
+
 let emit_tsan_func_exit i =
   if !Clflags.add_tsan then begin
     I.push (Reg64 RAX);
@@ -675,6 +725,7 @@ let emit_instr fallthrough i =
         I.inc (domain_field Domainstate.Domain_call_imm);
       end;
       add_used_symbol func;
+      emit_tsan_func_entry_imm i func;
       emit_call func;
       record_frame i.live false i.dbg ~label:label_after
   | Lop(Itailcall_ind { label_after = _; }) ->
@@ -682,7 +733,6 @@ let emit_instr fallthrough i =
       if Config.stats then begin
         I.inc (domain_field Domainstate.Domain_tailcall_ind);
       end;
-      emit_tsan_func_entry i;
       I.jmp (arg i 0);
       (* TODO KC: Spacetime
       if Config.spacetime then begin
@@ -718,6 +768,7 @@ let emit_instr fallthrough i =
         I.lea (mem64 QWORD 0 RSP) r13;
         I.lea (mem64 QWORD stack_ofs RSP) r12;
         load_symbol_addr func rax;
+        emit_tsan_func_entry_ext i;
         emit_call "caml_c_call_stack_args";
         record_frame i.live false i.dbg ~label:label_after;
         if Config.stats then begin
@@ -725,6 +776,7 @@ let emit_instr fallthrough i =
         end;
       end else if alloc then begin
         load_symbol_addr func rax;
+        emit_tsan_func_entry_ext i;
         emit_call "caml_c_call";
         record_frame i.live false i.dbg ~label:label_after;
         if Config.stats then begin
