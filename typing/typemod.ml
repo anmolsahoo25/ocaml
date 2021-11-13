@@ -2782,19 +2782,17 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr =
         Builtin_attributes.warning_attribute x;
         Tstr_attribute x, [], shape_map, env
   in
-  let rec type_struct env shape_map sstr =
-    match sstr with
-    | [] -> ([], [], shape_map, env)
-    | pstr :: srem ->
-        let previous_saved_types = Cmt_format.get_saved_types () in
-        let desc, sg, shape_map, new_env = type_str_item env shape_map pstr in
-        let str = { str_desc = desc; str_loc = pstr.pstr_loc; str_env = env } in
-        Cmt_format.set_saved_types (Cmt_format.Partial_structure_item str
-                                    :: previous_saved_types);
-        let (str_rem, sig_rem, shape_map, final_env) =
-          type_struct new_env shape_map srem
-        in
-        (str :: str_rem, sg @ sig_rem, shape_map, final_env)
+  let type_struct env shape_map sstr =
+    let rec type_struct_aux env shape_map str_acc sig_acc = function
+      | [] -> (List.rev str_acc, List.flatten (List.rev sig_acc), shape_map, env)
+      | pstr :: srem ->
+          let previous_saved_types = Cmt_format.get_saved_types () in
+          let desc, sg, shape_map, new_env = type_str_item env shape_map pstr in
+          let str = { str_desc = desc ; str_loc = pstr.pstr_loc ; str_env = env } in
+          Cmt_format.set_saved_types (Cmt_format.Partial_structure_item str :: previous_saved_types);
+          type_struct_aux new_env shape_map (str :: str_acc) (sg :: sig_acc) srem
+    in
+    type_struct_aux env shape_map [] [] sstr
   in
   let previous_saved_types = Cmt_format.get_saved_types () in
   let run () =
