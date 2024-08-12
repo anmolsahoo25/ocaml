@@ -28,6 +28,8 @@ open Ctype
 
 module Style = Misc.Style
 
+external run_z3 : string -> string = "caml_runz3"
+
 type type_forcing_context =
   | If_conditional
   | If_no_else_branch
@@ -3567,6 +3569,15 @@ and type_expect_
         exp_env = env }
       end
   | Pexp_match(sarg, caselist) ->
+      let ty_expected_desc = (get_desc ty_expected) in
+      let type_refinement =
+        match ty_expected_desc with 
+        | Tconstr (p, _, _) -> 
+            let ty_decl = Env.find_type p env in 
+            List.find_opt (fun a -> a.attr_name.txt = "refine") ty_decl.type_attributes 
+            |> Option.map (fun x -> (ty_decl, x))
+        | _ -> None
+      in
       let arg =
         with_local_level_generalize (fun () -> type_exp env sarg)
           ~before_generalize:(may_lower_contravariant env)
@@ -3584,6 +3595,79 @@ and type_expect_
       in
       if val_caselist = [] && eff_caselist <> [] then
         raise (Error (loc, env, No_value_clauses));
+      let expr_to_smt op args cond = 
+        let cond = if cond then "" else "not " in
+        (Printf.sprintf "(assert (%s(" cond) ^ 
+        (Printf.sprintf "%s" (op.pexp_desc |> (function Pexp_ident i -> (i.txt |> Longident.last) | _ -> failwith "unimplemented op"))) ^
+        (String.concat "" (List.map (fun (_, a) -> Printf.sprintf " %s" (Pprintast.string_of_expression a)) args)) ^
+        ")))\n" in
+      let query = ref "" in
+      let rec check_refinement val_caselist final_caselist assumptions idx =
+        let (ty_decl, refinement) = (type_refinement |> Option.get) in
+        match val_caselist with 
+        | [] -> List.rev final_caselist
+        | hd :: tl -> begin
+          (match hd.pc_rhs.pexp_desc with 
+          | Pexp_unreachable -> 
+              (* add to assumption and continue checking *)
+              check_refinement tl final_caselist (hd.pc_guard :: assumptions) idx
+          | Pexp_ident _i ->
+              let oc = open_out (Printf.sprintf "%d.smt" idx) in
+              (* get the underlying type of refinement *)
+              let ty_underlying = (ty_decl.type_manifest
+               |> Option.get
+               |> get_desc
+               |> (function Tconstr (p, _, _) -> Path.name p | _ -> failwith "type linked to unknown type"));
+              in
+              let pat_var = hd.pc_lhs.ppat_desc |> (function Ppat_var v -> v.txt | _ -> failwith "unsupported pattern") in
+              let declaration = Printf.sprintf "(declare-const %s %s)\n" pat_var (String.mapi (fun i c -> if i = 0 then Char.uppercase_ascii c else c) ty_underlying) in
+              Printf.fprintf oc "%s" declaration;
+              query := !query ^ declaration;
+              (* serialize guard *)
+              if Option.is_some hd.pc_guard then
+                (match (hd.pc_guard |> Option.get).pexp_desc with 
+                | Pexp_apply (op, args) -> let expr_smt = expr_to_smt op args true in Printf.fprintf oc "%s" expr_smt ; query := !query ^ expr_smt
+                | _ -> failwith "unimplemented expression"
+                )
+              else ();
+              (* serialize assumptions *)
+              List.iter (fun assumption -> (
+                if Option.is_some assumption then 
+                  match (assumption |> Option.get).pexp_desc with 
+                  | Pexp_apply (op , args) ->
+                       let expr_smt = expr_to_smt op args false in Printf.fprintf oc "%s" expr_smt ; query := !query ^ expr_smt
+                  | _ -> failwith "assumption unimplemented"
+                else 
+                  ()
+              )) assumptions;
+              (* serialize refinement *)
+              let (_refinement_pattern, refinement_exp) = 
+                match refinement.attr_payload with
+                | PPat (pattern, Some exp) -> (pattern, exp)
+                | _ -> failwith "refinement pattern not implemented" in
+              (match refinement_exp.pexp_desc with 
+              | Pexp_apply (op, args) ->
+                  (* subst pat var in refinement with current pat var *)
+                  let expr_smt = expr_to_smt op args false in Printf.fprintf oc "%s" expr_smt ; query := !query ^ expr_smt
+              | _ -> failwith "refinement operator not implemented");
+              Printf.fprintf oc "(check-sat)\n";
+              query := !query ^ "(check-sat)\n";
+              let res = run_z3 !query in
+                if (String.get res 0 = 's') then 
+                  failwith "type checking failed"
+                else ();
+              flush oc ; 
+              close_out oc ;
+              check_refinement tl (hd :: final_caselist) (hd.pc_guard :: assumptions) (idx + 1)
+          | _ -> failwith "unimplemented - pexp did not match")
+        end
+      in
+      let val_caselist = 
+        if Option.is_some type_refinement then 
+          check_refinement val_caselist [] [] 0
+        else 
+          val_caselist
+      in
       let val_cases, partial =
         type_cases Computation env arg.exp_type ty_expected_explained
           ~check_if_total:true loc val_caselist

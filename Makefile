@@ -1226,7 +1226,8 @@ runtime_COMMON_C_SOURCES = \
   sync \
   sys \
   $(UNIX_OR_WIN32) \
-  weak
+  weak \
+	runz3
 
 runtime_BYTECODE_ONLY_C_SOURCES = \
   backtrace_byt \
